@@ -308,6 +308,13 @@ impl Db {
         Ok(())
     }
 
+    pub fn update_tokens(&mut self, tokens: crate::api::RefreshedTokens) {
+        self.access_token = Some(tokens.access_token);
+        if let Some(refresh_token) = tokens.refresh_token {
+            self.refresh_token = Some(refresh_token);
+        }
+    }
+
     pub fn needs_login(&self) -> bool {
         self.access_token.is_none()
             || self.refresh_token.is_none()

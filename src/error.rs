@@ -184,6 +184,9 @@ pub enum Error {
     #[error("api request unauthorized")]
     RequestUnauthorized,
 
+    #[error("login session expired or was revoked; re-authenticate with `rbw purge` then `rbw login` (purge removes the local cache, not the server vault)")]
+    RefreshTokenRejected,
+
     #[error("error making api request")]
     Reqwest { source: reqwest::Error },
 

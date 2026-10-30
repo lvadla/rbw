@@ -370,8 +370,10 @@ struct ConnectRefreshTokenReq {
 }
 
 #[derive(serde::Deserialize, Debug)]
-struct ConnectRefreshTokenRes {
-    access_token: String,
+pub struct RefreshedTokens {
+    pub(crate) access_token: String,
+    // Some compatible servers renew only the access token.
+    pub(crate) refresh_token: Option<String>,
 }
 
 #[derive(serde::Serialize, Debug)]
@@ -1557,7 +1559,7 @@ impl Client {
     pub fn exchange_refresh_token(
         &self,
         refresh_token: &str,
-    ) -> Result<String> {
+    ) -> Result<RefreshedTokens> {
         let connect_req = ConnectRefreshTokenReq {
             grant_type: "refresh_token".to_string(),
             client_id: "cli".to_string(),
@@ -1569,14 +1571,18 @@ impl Client {
             .form(&connect_req)
             .send()
             .map_err(|source| Error::Reqwest { source })?;
-        let connect_res: ConnectRefreshTokenRes = res.json_with_path()?;
-        Ok(connect_res.access_token)
+        let status = res.status();
+        if status != reqwest::StatusCode::OK {
+            let body = res.json::<serde_json::Value>().ok();
+            return Err(classify_refresh_error(status, body.as_ref()));
+        }
+        res.json_with_path()
     }
 
     pub async fn exchange_refresh_token_async(
         &self,
         refresh_token: &str,
-    ) -> Result<String> {
+    ) -> Result<RefreshedTokens> {
         let connect_req = ConnectRefreshTokenReq {
             grant_type: "refresh_token".to_string(),
             client_id: "cli".to_string(),
@@ -1589,9 +1595,12 @@ impl Client {
             .send()
             .await
             .map_err(|source| Error::Reqwest { source })?;
-        let connect_res: ConnectRefreshTokenRes =
-            res.json_with_path().await?;
-        Ok(connect_res.access_token)
+        let status = res.status();
+        if status != reqwest::StatusCode::OK {
+            let body = res.json::<serde_json::Value>().await.ok();
+            return Err(classify_refresh_error(status, body.as_ref()));
+        }
+        res.json_with_path().await
     }
 
     fn api_url(&self, path: &str) -> String {
@@ -1778,3 +1787,25 @@ fn classify_login_error(error_res: &ConnectErrorRes, code: u16) -> Error {
     log::warn!("unexpected error received during login: {error_res:?}");
     Error::RequestFailed { status: code }
 }
+
+fn classify_refresh_error(
+    status: reqwest::StatusCode,
+    body: Option<&serde_json::Value>,
+) -> Error {
+    if status == reqwest::StatusCode::UNAUTHORIZED
+        || (status == reqwest::StatusCode::BAD_REQUEST
+            && body
+                .and_then(|value| value.get("error"))
+                .and_then(serde_json::Value::as_str)
+                == Some("invalid_grant"))
+    {
+        Error::RefreshTokenRejected
+    } else {
+        Error::RequestFailed {
+            status: status.as_u16(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

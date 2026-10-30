@@ -534,8 +534,8 @@ pub async fn sync(
         .await
         .context("failed to sync database from server")?;
     state.lock().await.set_master_password_reprompt(&entries);
-    if let Some(access_token) = access_token {
-        db.access_token = Some(access_token);
+    if let Some(tokens) = access_token {
+        db.update_tokens(tokens);
     }
     db.protected_key = Some(protected_key);
     db.protected_private_key = Some(protected_private_key);
